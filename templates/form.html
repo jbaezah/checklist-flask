@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Checklist LBTR</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 30px; background-color: #f5f6fa; }
+    h2 { color: #2c3e50; }
+    label { font-weight: bold; }
+    input, select {
+      padding: 6px; width: 250px;
+      border: 1px solid #ccc; border-radius: 5px;
+    }
+    h3 { margin-top: 30px; color: #34495e; }
+    #checklist { margin-top: 10px; }
+    .item-check {
+      background: white; padding: 12px; margin-bottom: 10px;
+      border-radius: 6px; border: 1px solid #e0e0e0;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .item-text { max-width: 60%; }
+    .item-text strong { display: block; }
+    .opciones { display: flex; gap: 12px; }
+    .opciones label { font-weight: normal; font-size: 13px; cursor: pointer; }
+    button {
+      margin-top: 20px; padding: 10px 20px;
+      background-color: #2e86de; color: white;
+      border: none; border-radius: 6px; cursor: pointer;
+    }
+    button:hover { background-color: #1b4f72; }
+  </style>
+</head>
+
+<body>
+  <h2>Formulario Checklist</h2>
+
+  <form id="formulario">
+    <label>RUT *</label><br />
+    <input type="text" id="rut" name="rut" /><br /><br />
+
+    <label>Nombre Cliente</label><br />
+    <input type="text" id="nombre" name="nombre" readonly /><br /><br />
+
+    <label>Segmento</label><br />
+    <input type="text" id="segmento" name="segmento" readonly /><br /><br />
+
+    <label>Producto *</label><br />
+    <select id="producto" name="producto">
+      <option value="">Seleccione...</option>
+      <option value="LBTR">LBTR</option>
+    </select><br /><br />
+
+    <label>Analista *</label><br />
+    <select id="analista" name="analista">
+      <option value="">Seleccione...</option>
+    </select><br /><br />
+
+    <h3>Checklist dinámico</h3>
+    <div id="checklist"></div>
+
+    <button type="submit">Enviar y guardar</button>
+  </form>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const form = document.getElementById("formulario");
+      const rutInput = document.getElementById("rut");
+
+      const ANALISTAS = [
+        "Andrea Rosales","Carolina Reyes","Daniel Orrego","Emilio Pina","Ignacio Peralta",
+        "Ivan Gonzalez","Jean Rojas","Joaquin Baeza","Jenny Riquelme","Jose Luis Gallegos",
+        "Karina Ramirez","Luis Pino","Marcelo Saez","Mauricio Morgado","Nelson Jofre",
+        "Nicole Astudillo","Rossana Alarcon","Sandra Cadiz","Silvana Armijo","Tami Lopez",
+        "Vivian Carrasco","Zully Valenzuela"
+      ];
+
+      // Cargar dropdown analistas
+      const analistaSelect = document.getElementById("analista");
+      ANALISTAS.forEach(a => {
+        const opt = document.createElement("option");
+        opt.value = a;
+        opt.textContent = a;
+        analistaSelect.appendChild(opt);
+      });
+
+      // Bloquear Enter para no enviar el form accidentalmente
+      form.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") e.preventDefault();
+      });
+
+      // Buscar cliente al presionar Enter en RUT
+      rutInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") buscarCliente();
+      });
+
+      async function buscarCliente() {
+        const rut = rutInput.value.trim();
+        if (!rut) return;
+
+        const res = await fetch("/buscar_cliente", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rut }),
+        });
+
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          alert("RUT no encontrado");
+          return;
+        }
+
+        document.getElementById("nombre").value = data.nombre || "";
+        document.getElementById("segmento").value = data.segmento || "";
+      }
+
+      // Checklist dinámico
+      document.getElementById("producto").addEventListener("change", async function () {
+        const segmento = document.getElementById("segmento").value;
+        const producto = this.value;
+
+        if (!segmento || !producto) return;
+
+        const res = await fetch("/checklist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ segmento, producto }),
+        });
+
+        const data = await res.json();
+
+        let html = "";
+        data.forEach((item, i) => {
+          const temaSeguro = (item.tema || "").replace(/"/g, "").replace(/\n/g, " ").trim();
+          const tipSeguro  = (item.tip  || "").replace(/"/g, "").replace(/\n/g, " ").trim();
+
+          // ✅ Enviamos "TEMA||TIP\nRESP" para que Python guarde subtítulo
+          html += `
+            <div class="item-check">
+              <div class="item-text">
+                <strong>${item.tema || ""}</strong>
+                <small>${item.tip || ""}</small>
+              </div>
+              <div class="opciones">
+                <label><input type="radio" name="check_${i}" value="${temaSeguro}||${tipSeguro}\nSI"> Sí</label>
+                <label><input type="radio" name="check_${i}" value="${temaSeguro}||${tipSeguro}\nNO"> No</label>
+                <label><input type="radio" name="check_${i}" value="${temaSeguro}||${tipSeguro}\nNA"> N/A</label>
+              </div>
+            </div>
+          `;
+        });
+
+        document.getElementById("checklist").innerHTML = html;
+      });
+
+      // Submit: descargar Excel y PDF
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+
+        const rut = document.getElementById("rut").value.trim();
+        const nombre = document.getElementById("nombre").value.trim();
+        const segmento = document.getElementById("segmento").value.trim();
+        const producto = document.getElementById("producto").value;
+        const analista = document.getElementById("analista").value;
+
+        if (!rut || !producto || !analista) {
+          alert("Debes ingresar RUT, seleccionar Producto y Analista.");
+          return;
+        }
+
+        const payload = { rut, nombre, segmento, producto, analista };
+        const formData = new FormData(form);
+        for (const [k, v] of formData.entries()) {
+          payload[k] = v; // incluye check_0, check_1, etc.
+        }
+
+        async function descargar(endpoint) {
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(`Error ${endpoint}: ${txt}`);
+          }
+
+          const blob = await res.blob();
+          const dispo = res.headers.get("Content-Disposition") || "";
+          let filename = "archivo";
+
+          const m = dispo.match(/filename="?([^"]+)"?/i);
+          if (m && m[1]) filename = m[1];
+
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(url);
+        }
+
+        try {
+          await descargar("/guardar");      // Excel
+          await descargar("/guardar_pdf");  // PDF
+          alert("Archivos generados y descargados ✅");
+        } catch (err) {
+          console.error(err);
+          alert("Error al generar/descargar. Revisa consola y logs del servidor.");
+        }
+      });
+    });
+  </script>
+</body>
+</html>
